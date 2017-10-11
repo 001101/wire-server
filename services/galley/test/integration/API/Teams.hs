@@ -152,6 +152,7 @@ testCreateOne2OneWithMembers g b c a = do
     WS.bracketR c (mem1^.userId) $ \wsMem1 -> do
         Util.addTeamMemberInternal g tid mem1
         checkTeamMemberJoin tid (mem1^.userId) wsMem1
+        assertQueue a $ tUpdate 2 [owner]
         WS.assertNoEvent timeout [wsMem1]
 
     Util.createOne2OneTeamConv g owner (mem1^.userId) Nothing tid !!! const 201 === statusCode
