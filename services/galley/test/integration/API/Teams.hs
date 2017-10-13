@@ -9,6 +9,7 @@ import Control.Concurrent.Async (mapConcurrently)
 import Control.Lens hiding ((#), (.=))
 import Control.Monad (void)
 import Control.Monad.IO.Class
+import Control.Retry
 import Data.Aeson hiding (json)
 import Data.ByteString.Conversion
 import Data.Foldable (for_)
@@ -17,6 +18,7 @@ import Data.List1
 import Data.Misc (PlainTextPassword (..))
 import Data.Monoid
 import Data.Range
+import Debug.Trace
 import Galley.Types hiding (EventType (..), EventData (..), MemberUpdate (..))
 import Galley.Types.Teams
 import Gundeck.Types.Notification
@@ -155,7 +157,19 @@ testCreateOne2OneWithMembers g b c a = do
         assertQueue a $ tUpdate 2 [owner]
         WS.assertNoEvent timeout [wsMem1]
 
-    Util.createOne2OneTeamConv g owner (mem1^.userId) Nothing tid !!! const 201 === statusCode
+    void $ retryWhileN 10 (\x -> Debug.Trace.trace ("Calling with: " ++ show x) $ repeatIf x)
+                          (Util.createOne2OneTeamConv g owner (mem1^.userId) Nothing tid)
+
+    -- Recreating a One2One is a no-op, returns a 200
+    Util.createOne2OneTeamConv g owner (mem1^.userId) Nothing tid !!! const 200 === statusCode
+  where
+    repeatIf :: Util.ResponseLBS -> Bool
+    repeatIf r = statusCode r /= 201
+
+    retryWhileN :: (MonadIO m) => Int -> (a -> Bool) -> m a -> m a
+    retryWhileN n f m = retrying (constantDelay 1000000 <> limitRetries n)
+                                 (const (return . f))
+                                 (const m)
 
 testAddTeamMember :: Galley -> Brig -> Cannon -> Http ()
 testAddTeamMember g b c = do
